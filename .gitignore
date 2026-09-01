@@ -44,9 +44,8 @@ Packages/
 *.app
 
 # ── ML model binaries (large, regenerate with scripts/convert_model.py) ──────
-*.mlpackage/Data/
-*.mlpackage/Manifest.json
-*.mlmodelc/
+**/*.mlpackage/
+**/*.mlmodelc/
 *.weights
 
 # ── Icons — keep sized variants, ignore the raw source ───────────────────────
@@ -100,3 +99,8 @@ coverage.xml
 *.secret
 secrets.json
 credentials.json
+
+# ── Project-local dev files ───────────────────────────────────────────────────
+project.yml
+req.md
+vocab.txt
