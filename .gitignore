@@ -1,38 +1,102 @@
-# Build output
-build/
-*.xcarchive
-*.pkg
-*.ipa
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
 
-# Xcode
+# ── Xcode ────────────────────────────────────────────────────────────────────
+build/
 DerivedData/
+*.xcarchive
 *.xcuserstate
 xcuserdata/
-*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/*.xcworkspace/xcuserdata/
 *.pbxuser
 *.mode1v3
 *.mode2v3
 *.perspectivev3
+timeline.xctimeline
+playground.xcworkspace
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
+# Xcode Previews
+PreviewReplacement/
 
-# Python (model conversion)
-ml-env/
-__pycache__/
-*.pyc
-*.egg-info/
+# ── Swift Package Manager ─────────────────────────────────────────────────────
+.swiftpm/
+.build/
+Packages/
+# Don't ignore Package.resolved — it pins dependency versions
+# Package.resolved
 
-# Editor
-.vscode/
-*.swp
-*.swo
+# ── Binaries & packages ───────────────────────────────────────────────────────
+*.pkg
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.dmg
+*.app
 
-# Secrets / certs
+# ── ML model binaries (large, regenerate with scripts/convert_model.py) ──────
+*.mlpackage/Data/
+*.mlpackage/Manifest.json
+*.mlmodelc/
+*.weights
+
+# ── Icons — keep sized variants, ignore the raw source ───────────────────────
+# AppIcon.png is the original 1024px source; AppIcon-1024.png is the copy used by Xcode
+Scout/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+
+# ── Signing & distribution ────────────────────────────────────────────────────
 *.p12
 *.cer
 *.mobileprovision
+*.certSigningRequest
 ExportOptions.plist
+
+# ── Python (model conversion) ─────────────────────────────────────────────────
+ml-env/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+eggs/
+parts/
+var/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.env
+.env.local
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+*.secret
+secrets.json
+credentials.json
