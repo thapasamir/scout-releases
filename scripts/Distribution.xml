@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Scout</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.rtf" mime-type="text/rtf"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+
+    <domains enable_localSystem="false" enable_userHome="true"/>
+
+    <choices-outline>
+        <line choice="com.samirthapa.scout"/>
+    </choices-outline>
+
+    <choice id="com.samirthapa.scout" visible="false" title="Scout">
+        <pkg-ref id="com.samirthapa.scout"/>
+    </choice>
+
+    <pkg-ref id="com.samirthapa.scout" version="1.0" onConclusion="none">Scout.pkg</pkg-ref>
+</installer-gui-script>
