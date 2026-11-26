@@ -94,19 +94,17 @@ final class AppState: ObservableObject {
         do {
             switch effectiveMode {
             case .literal:
-                searchResults = try await literalSearch.search(query: trimmed)
+                searchResults = rerank(try await literalSearch.search(query: trimmed))
 
             case .semantic:
                 guard let embedder else {
-                    // Model not available — fall back silently
-                    searchResults = try await literalSearch.search(query: trimmed)
+                    searchResults = rerank(try await literalSearch.search(query: trimmed))
                     return
                 }
                 let engine = SemanticSearchEngine(db: db, embedder: embedder)
-                searchResults = try await engine.search(query: trimmed)
+                searchResults = rerank(try await engine.search(query: trimmed))
 
             case .hybrid:
-                // Run both in parallel, merge by de-duplicating on id, boosting shared hits
                 async let literal  = literalSearch.search(query: trimmed)
                 async let semantic: [SearchResult] = {
                     guard let embedder else { return [] }
@@ -115,7 +113,7 @@ final class AppState: ObservableObject {
                 }()
 
                 let (lit, sem) = try await (literal, semantic)
-                searchResults = merge(literal: lit, semantic: sem)
+                searchResults = rerank(merge(literal: lit, semantic: sem))
             }
         } catch {
             print("[Search] Error: \(error)")
@@ -123,20 +121,55 @@ final class AppState: ObservableObject {
         }
     }
 
-    // Merge literal + semantic results: shared hits float to the top,
-    // then remaining literal, then remaining semantic.
+    // Reciprocal Rank Fusion: score = Σ 1/(k + rank).
+    // Rank-based, so FTS BM25 and cosine similarity never need to be on the
+    // same scale. A result ranked well in both lists naturally floats up.
     private func merge(literal: [SearchResult], semantic: [SearchResult]) -> [SearchResult] {
-        let semIDs = Set(semantic.map(\.id))
-        let litIDs = Set(literal.map(\.id))
+        let k = 60.0
+        var scores: [Int64: Double] = [:]
+        var byID: [Int64: SearchResult] = [:]
 
-        var shared   = literal.filter { semIDs.contains($0.id) }
-        var litOnly  = literal.filter { !semIDs.contains($0.id) }
-        var semOnly  = semantic.filter { !litIDs.contains($0.id) }
+        for (rank, result) in literal.enumerated() {
+            scores[result.id, default: 0] += 1.0 / (k + Double(rank + 1))
+            byID[result.id] = result
+        }
+        for (rank, result) in semantic.enumerated() {
+            scores[result.id, default: 0] += 1.0 / (k + Double(rank + 1))
+            if byID[result.id] == nil { byID[result.id] = result }
+        }
 
-        // Boost shared results' score
-        for i in shared.indices { shared[i].relevanceScore += 1.0 }
+        return scores
+            .sorted { $0.value > $1.value }
+            .prefix(200)
+            .compactMap { id, score in
+                guard var r = byID[id] else { return nil }
+                r.relevanceScore = score
+                return r
+            }
+    }
 
-        return (shared + litOnly + semOnly).prefix(200).map { $0 }
+    // Blend relevance with recency so newer screenshots rank higher when scores
+    // are close. Relevance dominates (75%); recency is a tiebreaker (25%).
+    // Half-life = 30 days: a 1-month-old result gets half the recency credit.
+    private func rerank(_ results: [SearchResult]) -> [SearchResult] {
+        guard results.count > 1 else { return results }
+
+        let now = Date().timeIntervalSince1970
+        let rawScores = results.map(\.relevanceScore)
+        let lo = rawScores.min()!
+        let hi = rawScores.max()!
+        let range = hi - lo
+
+        return results
+            .map { result in
+                var r = result
+                let normRelevance = range > 0 ? (result.relevanceScore - lo) / range : 1.0
+                let daysSince = max(0, now - result.fileCreatedAt) / 86_400
+                let recency = 1.0 / (1.0 + daysSince / 30.0)
+                r.relevanceScore = 0.75 * normRelevance + 0.25 * recency
+                return r
+            }
+            .sorted { $0.relevanceScore > $1.relevanceScore }
     }
 
     // MARK: – Folder management

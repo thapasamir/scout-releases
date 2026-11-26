@@ -10,16 +10,78 @@ struct LiteralSearchEngine {
 
         return try await db.read { db in
             if trimmed.count < 2 {
-                // FTS5 requires ≥2 chars; fall back to LIKE
                 return try likeFallback(db: db, query: trimmed, limit: limit)
             }
             return try fts5Search(db: db, query: trimmed, limit: limit)
         }
     }
 
+    // MARK: – Query building
+
+    // Common English words that add noise when required as AND terms.
+    private static let stopWords: Set<String> = [
+        "a", "an", "the", "is", "it", "in", "on", "at", "to", "for",
+        "of", "and", "or", "but", "with", "from", "by", "as", "be",
+        "was", "are", "were", "been", "has", "have", "had", "do", "did",
+        "does", "will", "would", "could", "should", "may", "might", "can",
+        "this", "that", "these", "those", "i", "my", "we", "you", "am",
+        "so", "if", "no", "not", "up", "out", "its"
+    ]
+
+    // Returns meaningful search terms: lowercased, punctuation-stripped, stop-words removed.
+    // Falls back to the original token list if everything gets filtered (rare for short queries).
+    private func searchTerms(from query: String) -> [String] {
+        let all = query
+            .lowercased()
+            .components(separatedBy: .whitespaces)
+            .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+            .filter { $0.count >= 2 }
+
+        let filtered = all.filter { !Self.stopWords.contains($0) }
+        return filtered.isEmpty ? all : filtered
+    }
+
+    private func escapeFTS(_ word: String) -> String {
+        word.replacingOccurrences(of: "\"", with: "\"\"")
+    }
+
+    // MARK: – FTS5 search
+
     private func fts5Search(db: Database, query: String, limit: Int) throws -> [SearchResult] {
-        let escaped = query.replacingOccurrences(of: "\"", with: "\"\"")
-        let ftsQuery = "\"\(escaped)\"*"
+        let terms = searchTerms(from: query)
+        guard !terms.isEmpty else { return [] }
+
+        // AND of all meaningful terms — words can appear in any order.
+        let andQuery = terms.map { "\"\(escapeFTS($0))\"*" }.joined(separator: " ")
+        var results = try runFTS(db: db, ftsQuery: andQuery, limit: limit)
+
+        // Phrase boost: if results also contain the words as an exact adjacent
+        // phrase, promote them to the top (more negative BM25 = better rank).
+        if terms.count > 1 {
+            let phraseQuery = "\"" + terms.map(escapeFTS).joined(separator: " ") + "\""
+            let phraseIDs = Set(try runFTS(db: db, ftsQuery: phraseQuery, limit: limit).map(\.id))
+            if !phraseIDs.isEmpty {
+                results = results.map { r in
+                    guard phraseIDs.contains(r.id) else { return r }
+                    var copy = r
+                    copy.relevanceScore -= abs(copy.relevanceScore) * 0.5
+                    return copy
+                }
+                .sorted { $0.relevanceScore < $1.relevanceScore }
+            }
+        }
+
+        // OR fallback: if AND found nothing, widen to any-term match so the
+        // user always gets something rather than a blank result.
+        if results.isEmpty && terms.count > 1 {
+            let orQuery = terms.map { "\"\(escapeFTS($0))\"*" }.joined(separator: " OR ")
+            results = try runFTS(db: db, ftsQuery: orQuery, limit: limit)
+        }
+
+        return results
+    }
+
+    private func runFTS(db: Database, ftsQuery: String, limit: Int) throws -> [SearchResult] {
         let sql = """
             SELECT s.id, s.file_path, s.file_name, s.file_created_at,
                    s.ocr_text, s.thumbnail_path, s.source_app,
@@ -47,6 +109,8 @@ struct LiteralSearchEngine {
         let rows = try Row.fetchAll(db, sql: sql, arguments: ["%\(query)%", limit])
         return rows.map(makeResult)
     }
+
+    // MARK: – loadAll (sidebar / browse, no query)
 
     func loadAll(
         limit: Int = 200,
@@ -100,6 +164,8 @@ struct LiteralSearchEngine {
             return rows.map(makeResult)
         }
     }
+
+    // MARK: – Helpers
 
     private func makeResult(from row: Row) -> SearchResult {
         SearchResult(
